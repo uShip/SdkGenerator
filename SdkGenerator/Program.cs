@@ -10,6 +10,7 @@ namespace SdkGenerator
     {
         private static void Main()
         {
+            //test
             var asm = Assembly.LoadFrom(@"C:\inetpub\wwwroot\uShipTrunk3\uShip.Api.Common\bin\uShip.Api.Common.dll");
 
             var type = asm.GetType("uShip.Api.Common.Outputs.Marketplace.ListingModel");
