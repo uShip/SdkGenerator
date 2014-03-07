@@ -30,13 +30,13 @@ namespace SdkGenerator
             var generatedNamespace = args[1];
             var outputFolder = args[2];
 
-
-            if (Directory.Exists(args[2]))
-            {
-                Directory.Delete(args[2], true);
-            }
-
-            Directory.CreateDirectory(args[2]);
+//
+//            if (Directory.Exists(args[2]))
+//            {
+//                Directory.Delete(args[2], true);
+//            }
+//
+//            Directory.CreateDirectory(args[2]);
 
             try
             {
