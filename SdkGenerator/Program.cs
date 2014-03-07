@@ -1,12 +1,12 @@
 ﻿using System;
 using System.CodeDom;
 using System.CodeDom.Compiler;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Routing;
@@ -17,6 +17,8 @@ namespace SdkGenerator
 {
     internal class Program
     {
+        public static IList<string> GenedClasses = new List<string>();
+
         private static int Main(string[] args) // todo: add unit tests and integration tests - for multiple httpbody parameters etc
         {
             args = new[] { @"C:\inetpub\wwwroot\uShipTrunk3\uShip.API\bin\uship.api.dll", "uShip.SDK.Generator", @"C:\temp\data\" };
@@ -30,20 +32,18 @@ namespace SdkGenerator
             var generatedNamespace = args[1];
             var outputFolder = args[2];
 
-//
-//            if (Directory.Exists(args[2]))
-//            {
-//                Directory.Delete(args[2], true);
-//            }
-//
-//            Directory.CreateDirectory(args[2]);
+
+            if (Directory.Exists(args[2]))
+            {
+                Directory.Delete(args[2], true);
+            }
+
+            Directory.CreateDirectory(args[2]);
 
             try
             {
-
                 GenerateWebApiClients(sourceAssembly, generatedNamespace, outputFolder);
                 Console.WriteLine("Controller clients were regenerated");
-
             }
             catch (Exception ex)
             {
@@ -80,13 +80,11 @@ namespace SdkGenerator
                 .Where(x => (
                     typeof(ApiController).IsAssignableFrom(x) ||
                     typeof(ApiControllerBase).IsAssignableFrom(x))
-                    && !x.IsAbstract);
+                            && !x.IsAbstract);
 
 
             foreach (var controllerType in apiControllerTypes)
             {
-
-
                 var methodInfos = controllerType.GetMethods(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance);
                 var controllerName = controllerType.Name.Replace("Controller", "");
 
@@ -283,38 +281,53 @@ namespace SdkGenerator
             return type.IsPrimitive || type == typeof(string);
         }
 
-        public static IList<string> GenedClasses = new List<string>();
-
         public static void WriteClassProperties(Type classType, string outputFolder)
         {
             var className = classType.Name.Replace("`1", "");
 
-            if (GenedClasses.Contains(classType.FullName)) return;
+            if (GenedClasses.Contains(classType.Namespace + "." + className)) return;
 
-            GenedClasses.Add(classType.FullName);
+            GenedClasses.Add(classType.Namespace + "." + className);
 
-            if (!File.Exists(outputFolder + className + ".cs"))
+
+            if (classType.GetGenericArguments().Length > 0)
             {
-                var creator = new ClassCreator(classType.Namespace);
-
-                if (classType.GetGenericArguments().Length > 0)
+                foreach (var genericArgument in classType.GetGenericArguments())
                 {
-                    foreach (var genericArgument in classType.GetGenericArguments())
+                    if (!genericArgument.IsEnum)
                     {
-                        if (!genericArgument.IsEnum)
-                        {
-                            WriteClassProperties(genericArgument, outputFolder);
-                        }
+                        WriteClassProperties(genericArgument, outputFolder);
+                    }
 
-                        if (genericArgument.IsEnum)
-                        {
-                            WriteEnum(genericArgument, outputFolder);
-                        }
+                    if (genericArgument.IsEnum)
+                    {
+                        WriteEnum(genericArgument, outputFolder);
                     }
                 }
+            }
 
-                var useTypeT = classType.IsConstructedGenericType;
+            var useTypeT = classType.IsConstructedGenericType;
 
+
+            var folderName = classType.Namespace.Replace(".", @"\");
+
+            var pathBuilder = new StringBuilder(outputFolder);
+            pathBuilder.AppendFormat(@"{0}\", folderName);
+
+            if (!Directory.Exists(pathBuilder.ToString()))
+            {
+                try { Directory.CreateDirectory(pathBuilder.ToString()); }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+                }
+            }
+
+            if (!File.Exists(pathBuilder + className + ".cs"))
+            {
+                
+
+                var creator = new ClassCreator(classType.Namespace);
                 creator.SetClassName(className, useTypeT);
 
                 foreach (var prop in classType.GetProperties())
@@ -347,21 +360,36 @@ namespace SdkGenerator
                     }
                 }
 
-                creator.GenerateCSharpCode(outputFolder + className + ".cs");
+                creator.GenerateCSharpCode(pathBuilder + className + ".cs");
             }
         }
 
         private static void WriteEnum(Type genericArgument, string outputFolder)
         {
-            if (GenedClasses.Contains(genericArgument.FullName)) return;
-
-            GenedClasses.Add(genericArgument.FullName);
-
             var enumName = genericArgument.Name.Replace("`1", "");
-            var enumDestination = outputFolder + enumName + ".cs";
-            if (!File.Exists(enumDestination))
+
+            var folderName = genericArgument.Namespace.Replace(".", @"\");
+
+            var pathBuilder = new StringBuilder(outputFolder);
+            pathBuilder.AppendFormat(@"{0}\", folderName);
+
+            if (!Directory.Exists(pathBuilder.ToString()))
             {
-                new EnumCreator(genericArgument.Namespace).SetClassName(genericArgument.Name, false).AddEnumMembersFromType(genericArgument).GenerateCSharpCode(enumDestination);
+                Directory.CreateDirectory(pathBuilder.ToString());
+            }
+
+            if (!File.Exists(pathBuilder + enumName + ".cs"))
+            {
+                var enumDestination = pathBuilder + enumName + ".cs";
+
+                if (GenedClasses.Contains(genericArgument.FullName) && File.Exists(enumDestination)) return;
+
+                GenedClasses.Add(genericArgument.Namespace + "." + enumName);
+
+                new EnumCreator(genericArgument.Namespace)
+                    .SetClassName(genericArgument.Name, false)
+                    .AddEnumMembersFromType(genericArgument)
+                    .GenerateCSharpCode(enumDestination);
             }
         }
     }
