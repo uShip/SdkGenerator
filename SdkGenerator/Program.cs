@@ -1,6 +1,8 @@
 ﻿using System;
 using System.CodeDom;
 using System.CodeDom.Compiler;
+using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -17,7 +19,7 @@ namespace SdkGenerator
     {
         private static int Main(string[] args) // todo: add unit tests and integration tests - for multiple httpbody parameters etc
         {
-            args = new[] { @"C:\inetpub\wwwroot\uShipTrunk\uShip.API\bin\uship.api.dll", "uShip.SDK.Generator", @"c:\temp\" };
+            args = new[] { @"C:\inetpub\wwwroot\uShipTrunk3\uShip.API\bin\uship.api.dll", "uShip.SDK.Generator", @"C:\temp\data\" };
 
             if (args.Length < 3)
             {
@@ -27,17 +29,21 @@ namespace SdkGenerator
             var sourceAssembly = args[0];
             var generatedNamespace = args[1];
             var outputFolder = args[2];
+
+
+            if (Directory.Exists(args[2]))
+            {
+                Directory.Delete(args[2], true);
+            }
+
+            Directory.CreateDirectory(args[2]);
+
             try
             {
-                if (ShouldRegenerateControllerClients(sourceAssembly, outputFolder))
-                {
-                    GenerateWebApiClients(sourceAssembly, generatedNamespace, outputFolder);
-                    Console.WriteLine("Controller clients were regenerated");
-                }
-                else
-                {
-                    Console.WriteLine("No change detected in source web api controllers - controller clients were not regenerated");
-                }
+
+                GenerateWebApiClients(sourceAssembly, generatedNamespace, outputFolder);
+                Console.WriteLine("Controller clients were regenerated");
+
             }
             catch (Exception ex)
             {
@@ -128,10 +134,10 @@ namespace SdkGenerator
 
                     var noParameterHasFromBodyAttribute = !parameterInfos.Any(x => x.GetCustomAttributes(typeof(FromBodyAttribute), true).Any());
                     var allParametersAreSimpleType = parameterInfos.All(x => IsSimpleType(x.ParameterType));
-                    if (isPost && noParameterHasFromBodyAttribute && allParametersAreSimpleType)
-                    {
-                        throw new Exception(string.Format("{0}.{1} parameters are all of simple type and no one has FromBody attribute", controllerType.Name, methodInfo.Name));
-                    }
+                    //                    if (isPost && noParameterHasFromBodyAttribute && allParametersAreSimpleType)
+                    //                    {
+                    //                        throw new Exception(string.Format("{0}.{1} parameters are all of simple type and no one has FromBody attribute", controllerType.Name, methodInfo.Name));
+                    //                    }
 
                     CodeVariableReferenceExpression httpBodyParameterVariableReference = null;
                     foreach (var parameterInfo in parameterInfos)
@@ -144,7 +150,7 @@ namespace SdkGenerator
                             isPost = true;
                             numberOfHttpBodyParameters++;
                         }
-                        if (isPost && numberOfHttpBodyParameters > 1) throw new Exception(string.Format("{0}.{1} can have only one http body parameter", controllerType.Name, methodInfo.Name));
+                        //                        if (isPost && numberOfHttpBodyParameters > 1) throw new Exception(string.Format("{0}.{1} can have only one http body parameter", controllerType.Name, methodInfo.Name));
 
 
                         if (!parameterInfo.ParameterType.FullName.StartsWith("System"))
@@ -198,17 +204,46 @@ namespace SdkGenerator
                         new CodeThisReferenceExpression(),
                         isPost ? "HttpClientPost" : "HttpClientGet",
                         typeParameters);
-                    var statement = isPost
-                        ? new CodeMethodInvokeExpression(codeMethodReferenceExpression, new CodePrimitiveExpression(methodInfo.Name), httpBodyParameterVariableReference, routeValuesReference)
-                        : new CodeMethodInvokeExpression(codeMethodReferenceExpression, new CodePrimitiveExpression(methodInfo.Name), routeValuesReference);
+
+
+                    CodeMethodInvokeExpression statement = null;
+
+                    if (isPost && httpBodyParameterVariableReference != null)
+                    {
+                        try
+                        {
+                            statement = new CodeMethodInvokeExpression(
+                                codeMethodReferenceExpression,
+                                new CodePrimitiveExpression(methodInfo.Name),
+                                httpBodyParameterVariableReference,
+                                routeValuesReference);
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine(e);
+                        }
+                    }
+                    else
+                    {
+                        statement = new CodeMethodInvokeExpression(codeMethodReferenceExpression, new CodePrimitiveExpression(methodInfo.Name), routeValuesReference);
+                    }
+
 
                     var asyncCodeMethodReferenceExpression = new CodeMethodReferenceExpression(
                         new CodeThisReferenceExpression(),
                         isPost ? "HttpClientPostAsync" : "HttpClientGetAsync",
                         typeParameters);
-                    var asyncStatement = isPost
-                        ? new CodeMethodInvokeExpression(asyncCodeMethodReferenceExpression, new CodePrimitiveExpression(methodInfo.Name), httpBodyParameterVariableReference, routeValuesReference)
-                        : new CodeMethodInvokeExpression(asyncCodeMethodReferenceExpression, new CodePrimitiveExpression(methodInfo.Name), routeValuesReference);
+
+                    CodeMethodInvokeExpression asyncStatement;
+                    if (isPost && httpBodyParameterVariableReference != null)
+                    {
+                        asyncStatement = new CodeMethodInvokeExpression(asyncCodeMethodReferenceExpression, new CodePrimitiveExpression(methodInfo.Name), httpBodyParameterVariableReference, routeValuesReference);
+                    }
+                    else
+                    {
+                        asyncStatement = new CodeMethodInvokeExpression(asyncCodeMethodReferenceExpression, new CodePrimitiveExpression(methodInfo.Name), routeValuesReference);
+                    }
+
                     var asyncCodeMethodReturnStatement = new CodeMethodReturnStatement(asyncStatement);
 
                     if (returnTypeIsVoid)
@@ -248,10 +283,15 @@ namespace SdkGenerator
             return type.IsPrimitive || type == typeof(string);
         }
 
+        public static IList<string> GenedClasses = new List<string>();
 
         public static void WriteClassProperties(Type classType, string outputFolder)
         {
             var className = classType.Name.Replace("`1", "");
+
+            if (GenedClasses.Contains(classType.FullName)) return;
+
+            GenedClasses.Add(classType.FullName);
 
             if (!File.Exists(outputFolder + className + ".cs"))
             {
@@ -313,6 +353,10 @@ namespace SdkGenerator
 
         private static void WriteEnum(Type genericArgument, string outputFolder)
         {
+            if (GenedClasses.Contains(genericArgument.FullName)) return;
+
+            GenedClasses.Add(genericArgument.FullName);
+
             var enumName = genericArgument.Name.Replace("`1", "");
             var enumDestination = outputFolder + enumName + ".cs";
             if (!File.Exists(enumDestination))

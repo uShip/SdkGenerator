@@ -44,7 +44,16 @@ namespace SdkGenerator
 
             for (var i = 0; i < values.Length; i++)
             {
-                var value = (int)values.GetValue(i);
+                int value;
+                try
+                {
+                    value = (int)values.GetValue(i);
+                }
+                catch (Exception e)
+                {
+                    value = 0;
+                }
+
                 var name = Enum.GetName(enumType, value);
                 AddMember(name, value);
             }
